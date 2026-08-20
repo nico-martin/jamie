@@ -1,0 +1,42 @@
+{
+  "name": "jamie",
+  "version": "0.0.1",
+  "description": "An AI-assisted recipe builder and cooking companion",
+  "type": "module",
+  "packageManager": "pnpm@11.1.1",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\""
+  },
+  "dependencies": {
+    "@huggingface/transformers": "link:../transformers.js/packages/transformers/",
+    "@huggingface/transformers-response-constraint": "link:../transformers.js/packages/transformers-response-constraint/",
+    "@huggingface/webgpu-models": "link:../private-webgpu-experiments/packages/models/",
+    "jaison": "^2.1.3",
+    "kokoro-js": "^1.2.1",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "vad-recorder": "^0.1.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "latest",
+    "@tailwindcss/vite": "latest",
+    "@trivago/prettier-plugin-sort-imports": "^5.2.2",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "latest",
+    "eslint": "latest",
+    "eslint-plugin-react-hooks": "latest",
+    "eslint-plugin-react-refresh": "latest",
+    "globals": "latest",
+    "prettier": "latest",
+    "tailwindcss": "latest",
+    "typescript": "^6.0.0",
+    "typescript-eslint": "latest",
+    "vite": "latest"
+  }
+}
