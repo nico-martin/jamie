@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import BuilderScreen from "./components/builder/BuilderScreen";
 import RecipeScreen from "./components/recipe/RecipeScreen";
 import { prepareAppModels } from "./services/modelManager";
@@ -21,6 +21,13 @@ export default function App() {
     useState<GenerationMetrics>(INITIAL_METRICS);
   const [rawRecipeJson, setRawRecipeJson] = useState("");
   const [generationError, setGenerationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!import.meta.env.PROD) return;
+    void prepareAppModels().catch((error: unknown) => {
+      console.error("Failed to prepare offline models", error);
+    });
+  }, []);
 
   const handleGenerate = async (prompt: string) => {
     const recipeId = crypto.randomUUID();
