@@ -3,6 +3,7 @@ import {
   Bot,
   Braces,
   CircleCheck,
+  Info,
   LoaderCircle,
   MessagesSquare,
   Mic,
@@ -459,8 +460,25 @@ export default function AgentPanel({
             </p>
           </div>
           <div className="rounded-2xl bg-cream/8 px-3 py-2.5">
-            <p className="text-[9px] uppercase tracking-[0.13em] text-cream/35">
+            <p className="flex items-center gap-1 text-[9px] uppercase tracking-[0.13em] text-cream/35">
               Speed
+              <span className="group relative normal-case tracking-normal">
+                <button
+                  type="button"
+                  aria-label="About generation speed"
+                  aria-describedby="generation-speed-tooltip"
+                  className="grid rounded-full transition hover:text-cream/70 focus-visible:text-cream/70 focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-cream"
+                >
+                  <Info size={11} aria-hidden="true" />
+                </button>
+                <span
+                  id="generation-speed-tooltip"
+                  role="tooltip"
+                  className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 w-max -translate-x-1/2 whitespace-nowrap rounded-lg bg-ink px-3 py-2.5 text-xs font-normal leading-relaxed text-cream opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                >
+                  Uses an experimental WebGPU runtime.
+                </span>
+              </span>
             </p>
             <p className="mt-1 font-mono text-sm font-bold">
               {(generationMetrics?.tokensPerSecond ?? 0).toFixed(1)} tps

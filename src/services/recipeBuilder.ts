@@ -1,8 +1,8 @@
 import { TextStreamer } from "@huggingface/transformers";
 import {
-  ResponseConstraint,
+  StructuredOutputProcessor,
   type ResponseFormat,
-} from "@huggingface/transformers-response-constraint";
+} from "@huggingface/transformers-structured-output";
 import jaison from "jaison";
 import type { Ingredient, Recipe, RecipeStep } from "../types/recipe";
 import { getTextGenerationPipeline } from "./shared";
@@ -11,11 +11,6 @@ const recipeResponseFormat: ResponseFormat = {
   type: "json_schema",
   json_schema: {
     type: "object",
-    "x-guidance": {
-      item_separator: ",",
-      key_separator: ":",
-      whitespace_flexible: false,
-    },
     properties: {
       recipe: {
         type: "object",
@@ -208,15 +203,21 @@ export async function generateRecipe(
   const messages = [
     {
       role: "system" as const,
-      content:
-        "You are an expert European recipe developer. Create a practical, complete recipe from the user's request. Use European metric measurements throughout: grams (g), kilograms (kg), millilitres (ml), litres (l), centimetres (cm), and Celsius (°C). Express small quantities in grams or millilitres. Do not use cups, teaspoons (tsp), tablespoons (tbsp), ounces, pounds, fluid ounces, inches, or Fahrenheit unless the user explicitly requests them. Keep the title short. Populate every requested field with meaningful recipe content. Write properties in this order: title, description, servings, ingredients, steps. For each ingredient use amount, unit, name, note in that order. For each step use title, instruction, durationMinutes in that order. Use an empty note only when no useful note exists and use zero duration only when timing is not applicable. Return compact JSON only, without formatting or whitespace outside strings.",
+      content: [
+        "You are an expert European recipe developer. Create a practical, complete recipe from the user's request.",
+        "Use European metric measurements throughout: grams (g), kilograms (kg), millilitres (ml), litres (l), centimetres (cm), and Celsius (°C). Express small quantities in grams or millilitres. Do not use cups, teaspoons (tsp), tablespoons (tbsp), ounces, pounds, fluid ounces, inches, or Fahrenheit unless the user explicitly requests them.",
+        "Keep the title short. Populate every requested field with meaningful recipe content.",
+        "Ingredients should always be in English",
+        "make sure you follow this JSON scheme: " +
+          JSON.stringify(recipeResponseFormat),
+      ].join("\n\n"),
     },
     { role: "user" as const, content: prompt },
   ];
   let generatedTokens = 0;
   let firstTokenAt: number | null = null;
   let streamedOutput = "";
-  const constraint = await ResponseConstraint.fromResponseFormat(
+  const processor = new StructuredOutputProcessor(
     generator.tokenizer,
     recipeResponseFormat
   );
@@ -254,8 +255,7 @@ export async function generateRecipe(
       max_new_tokens: 1256,
       do_sample: true,
       top_k: 1,
-      logits_processor: constraint.logits_processor,
-      stopping_criteria: constraint.stopping_criteria,
+      logits_processor: processor,
       streamer,
     });
   } catch (error) {

@@ -11,9 +11,9 @@ importers:
       '@huggingface/transformers':
         specifier: link:../transformers.js/packages/transformers/
         version: link:../transformers.js/packages/transformers
-      '@huggingface/transformers-response-constraint':
-        specifier: link:../transformers.js/packages/transformers-response-constraint/
-        version: link:../transformers.js/packages/transformers-response-constraint
+      '@huggingface/transformers-structured-output':
+        specifier: link:../transformers.js/packages/transformers-structured-output/
+        version: link:../transformers.js/packages/transformers-structured-output
       '@huggingface/webgpu-models':
         specifier: link:../private-webgpu-experiments/packages/models/
         version: link:../private-webgpu-experiments/packages/models
