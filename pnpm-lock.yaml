@@ -14,9 +14,6 @@ importers:
       '@huggingface/transformers-structured-output':
         specifier: link:../transformers.js/packages/transformers-structured-output/
         version: link:../transformers.js/packages/transformers-structured-output
-      '@huggingface/webgpu-models':
-        specifier: link:../private-webgpu-experiments/packages/models/
-        version: link:../private-webgpu-experiments/packages/models
       jaison:
         specifier: ^2.1.3
         version: 2.1.3

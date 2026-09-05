@@ -6,7 +6,6 @@ import {
   type AutomaticSpeechRecognitionPipeline,
   type TextGenerationPipeline,
 } from "@huggingface/transformers";
-import { createWhisperBaseBackend } from "@huggingface/webgpu-models/whisper-base";
 import { KokoroTTS } from "kokoro-js";
 import {
   VadRecorder,
@@ -14,6 +13,7 @@ import {
 } from "vad-recorder";
 import { getTextGenerationPipeline } from "./shared";
 
+const WHISPER_MODEL_ID = "onnx-community/whisper-base";
 const KOKORO_MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 let transcriberPromise: Promise<AutomaticSpeechRecognitionPipeline> | null =
   null;
@@ -32,11 +32,6 @@ interface NativeTranscriptionTiming {
   decodedTokens: number;
 }
 
-let activeNativeTranscriptionTimings: NativeTranscriptionTiming[] | null = null;
-const whisper = createWhisperBaseBackend({
-  encoderPrecision: "auto",
-  onTranscription: (timing) => activeNativeTranscriptionTimings?.push(timing),
-});
 const kitchenVadRecorder = new VadRecorder({
   threshold: 0.55,
   minSpeechDuration: 250,
@@ -77,17 +72,21 @@ async function inspectModelFiles(
 export async function inspectKitchenAssistantModels() {
   const [vad, transcriptionFiles, speechFiles] = await Promise.all([
     VadRecorder.info(),
-    ModelRegistry.get_pipeline_files("automatic-speech-recognition", whisper, {
-      device: "webgpu",
-      dtype: "auto",
-    }),
+    ModelRegistry.get_pipeline_files(
+      "automatic-speech-recognition",
+      "onnx-community/whisper-base",
+      {
+        device: "webgpu",
+        dtype: "auto",
+      }
+    ),
     ModelRegistry.get_pipeline_files("text-to-audio", KOKORO_MODEL_ID, {
       device: "webgpu",
       dtype: "fp32",
     }),
   ]);
   const [transcription, speech] = await Promise.all([
-    inspectModelFiles(whisper, transcriptionFiles),
+    inspectModelFiles(WHISPER_MODEL_ID, transcriptionFiles),
     inspectModelFiles(KOKORO_MODEL_ID, speechFiles),
   ]);
   return {
@@ -333,17 +332,21 @@ async function generateKitchenChatTurn(
 function getSpeechRecognitionPipeline(
   onProgress?: (progress: TranscriptionProgress) => void
 ): Promise<AutomaticSpeechRecognitionPipeline> {
-  transcriberPromise ??= pipeline("automatic-speech-recognition", whisper, {
-    device: "webgpu",
-    dtype: "auto",
-    progress_callback: (progress) => {
-      if (progress.status !== "progress_total") return;
-      onProgress?.({
-        state: "loading",
-        progress: Math.floor(progress.progress),
-      });
-    },
-  }).catch((error) => {
+  transcriberPromise ??= pipeline(
+    "automatic-speech-recognition",
+    WHISPER_MODEL_ID,
+    {
+      device: "webgpu",
+      dtype: "auto",
+      progress_callback: (progress) => {
+        if (progress.status !== "progress_total") return;
+        onProgress?.({
+          state: "loading",
+          progress: Math.floor(progress.progress),
+        });
+      },
+    }
+  ).catch((error) => {
     transcriberPromise = null;
     throw error;
   });
@@ -374,7 +377,6 @@ export async function transcribeCookingAudio(
   onProgress?.({ state: "transcribing", progress: 100 });
   const waveform = await decodeRecordedAudio(audio);
   const nativeTimings: NativeTranscriptionTiming[] = [];
-  activeNativeTranscriptionTimings = nativeTimings;
   const startedAt = performance.now();
   try {
     const result = await transcriber(waveform, {
@@ -412,7 +414,6 @@ export async function transcribeCookingAudio(
     });
     return result.text.trim();
   } finally {
-    activeNativeTranscriptionTimings = null;
   }
 }
 

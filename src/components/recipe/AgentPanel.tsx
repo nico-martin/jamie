@@ -29,6 +29,7 @@ import {
   type TranscriptionProgress,
 } from "../../services/kitchenAssistant";
 import type { GenerationMetrics } from "../../services/recipeBuilder";
+import { LLM_MODEL_DTYPE, LLM_MODEL_ID } from "../../services/shared.ts";
 import { Modal } from "../../theme";
 
 interface AgentPanelProps {
@@ -476,7 +477,7 @@ export default function AgentPanel({
                   role="tooltip"
                   className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 w-max -translate-x-1/2 whitespace-nowrap rounded-lg bg-ink px-3 py-2.5 text-xs font-normal leading-relaxed text-cream opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
                 >
-                  Uses an experimental WebGPU runtime.
+                  {LLM_MODEL_ID} ({LLM_MODEL_DTYPE})
                 </span>
               </span>
             </p>

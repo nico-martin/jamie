@@ -3,11 +3,12 @@ import {
   pipeline,
   type TextGenerationPipeline,
 } from "@huggingface/transformers";
-import gemma4 from "@huggingface/webgpu-models/gemma4";
 
 let generatorPromise: Promise<TextGenerationPipeline> | null = null;
 let downloadInfoPromise: Promise<DownloadInfo> | null = null;
 let lastDownloadProgress = -1;
+export const LLM_MODEL_ID = "onnx-community/gemma-4-E2B-it-ONNX";
+export const LLM_MODEL_DTYPE = "q4f16";
 
 export interface DownloadInfo {
   cachedFiles: number;
@@ -56,14 +57,14 @@ export async function getDownloadInfo(refresh = false): Promise<DownloadInfo> {
   if (refresh) downloadInfoPromise = null;
   downloadInfoPromise ??= ModelRegistry.get_pipeline_files(
     "text-generation",
-    gemma4,
+    LLM_MODEL_ID,
     {
       device: "webgpu",
-      dtype: "auto",
+      dtype: LLM_MODEL_DTYPE,
     }
   ).then(async (files) => {
     const metadata = await Promise.all(
-      files.map((file) => ModelRegistry.get_file_metadata(gemma4, file))
+      files.map((file) => ModelRegistry.get_file_metadata(LLM_MODEL_ID, file))
     );
     const existing = metadata.filter((file) => file.exists);
     const uncached = existing.filter((file) => !file.fromCache);
@@ -117,9 +118,9 @@ export function getTextGenerationPipeline(): Promise<TextGenerationPipeline> {
         progress: info.cachedFiles === info.files ? 100 : 0,
       });
 
-      return pipeline("text-generation", gemma4, {
+      return pipeline("text-generation", LLM_MODEL_ID, {
         device: "webgpu",
-        dtype: "auto",
+        dtype: LLM_MODEL_DTYPE,
         progress_callback: (progress) => {
           if (progress.status === "ready") {
             updateModelLoadStatus({
