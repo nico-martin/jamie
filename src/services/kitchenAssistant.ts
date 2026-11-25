@@ -436,13 +436,7 @@ export async function generateCookingAgentReply(
         : 0
       ).toFixed(1)
     );
-    console.log("jamie_text_generation_timing", {
-      round: round + 1,
-      tps,
-      tokenCount: generatedTokens,
-      prefillTimeMs: Number(timeToFirstTokenMs.toFixed(1)),
-      generationTimeMs: Number(durationMs.toFixed(1)),
-    });
+
     if (timingTrace) {
       logJamieTiming(timingTrace, "agent_loop_generated", {
         round: round + 1,

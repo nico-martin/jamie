@@ -5,7 +5,10 @@ import {
 } from "@huggingface/transformers-structured-output";
 import jaison from "jaison";
 import type { Ingredient, Recipe, RecipeStep } from "../types/recipe";
-import { getTextGenerationPipeline } from "./shared";
+import {
+  ensureToolResponseTemplate,
+  getTextGenerationPipeline,
+} from "./shared";
 
 const recipeResponseFormat: ResponseFormat = {
   type: "json_schema",
@@ -200,6 +203,8 @@ export async function generateRecipe(
   options: GenerateRecipeOptions = {}
 ): Promise<string> {
   const generator = await getTextGenerationPipeline();
+  const { tokenizer } = generator;
+  ensureToolResponseTemplate(tokenizer);
   const messages = [
     {
       role: "system" as const,
@@ -217,9 +222,17 @@ export async function generateRecipe(
   let generatedTokens = 0;
   let firstTokenAt: number | null = null;
   let streamedOutput = "";
+  const thinkingOptions = { enable_thinking: false };
+  const prefix = tokenizer.apply_chat_template(messages, {
+    ...thinkingOptions,
+    add_generation_prompt: true,
+    tokenize: false,
+  });
+  const parser = tokenizer.get_response_parser({ prefix });
   const processor = new StructuredOutputProcessor(
-    generator.tokenizer,
-    recipeResponseFormat
+    tokenizer,
+    recipeResponseFormat,
+    thinkingOptions
   );
 
   const getMetrics = (): GenerationMetrics => {
@@ -234,9 +247,28 @@ export async function generateRecipe(
     };
   };
 
-  const streamer = new TextStreamer(generator.tokenizer, {
+  let thinkingText = "";
+  const handleResponseEvents = (events: ReturnType<typeof parser.feed>) => {
+    let thinking = "";
+    let content = "";
+    for (const event of events) {
+      if (event.type !== "region_chunk") continue;
+      if (event.field === "reasoning_content") thinking += event.text;
+      if (event.field === "content") content += event.text;
+    }
+    if (thinking) {
+      thinkingText += thinking;
+      console.log("recipe_thinking", thinkingText);
+    }
+    if (!content) return;
+    streamedOutput += content;
+    options.onUpdate?.(streamedOutput, getMetrics());
+  };
+
+  const streamer = new TextStreamer(tokenizer, {
     skip_prompt: true,
-    skip_special_tokens: true,
+    skip_special_tokens: false,
+    decode_kwargs: { clean_up_tokenization_spaces: false },
     token_callback_function: (tokenIds) => {
       const isFirstToken = firstTokenAt === null;
       firstTokenAt ??= performance.now();
@@ -245,19 +277,21 @@ export async function generateRecipe(
       if (isFirstToken) options.onFirstToken?.(streamedOutput, getMetrics());
     },
     callback_function: (text) => {
-      streamedOutput += text;
-      options.onUpdate?.(streamedOutput, getMetrics());
+      handleResponseEvents(parser.feed(text));
     },
   });
 
   try {
     await generator(messages, {
-      max_new_tokens: 1256,
+      max_new_tokens: 204800,
       do_sample: true,
       top_k: 1,
       logits_processor: processor,
       streamer,
+      tokenizer_encode_kwargs: thinkingOptions,
     });
+    const [, finalEvents] = parser.finalize();
+    handleResponseEvents(finalEvents);
   } catch (error) {
     console.error("constrained_recipe_generation_failed", {
       error,
