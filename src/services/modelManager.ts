@@ -6,6 +6,7 @@ import {
   type KitchenModelDownloadInfo,
 } from "./kitchenAssistant";
 import {
+  LLM_MODEL_ID,
   getDownloadInfo,
   getModelLoadStatus,
   getTextGenerationPipeline,
@@ -13,7 +14,7 @@ import {
   type DownloadInfo,
 } from "./shared";
 
-export type AppModelId = "gemma" | "vad" | "whisper" | "kokoro";
+export type AppModelId = "llm" | "vad" | "whisper" | "kokoro";
 export type AppModelState =
   "checking" | "ready" | "downloading" | "loading" | "error";
 
@@ -38,7 +39,10 @@ const MODEL_DETAILS: Record<
   AppModelId,
   Pick<AppModelStatus, "name" | "purpose">
 > = {
-  gemma: { name: "Gemma 4", purpose: "Recipe generation and Jamie" },
+  llm: {
+    name: LLM_MODEL_ID.slice(LLM_MODEL_ID.lastIndexOf("/") + 1),
+    purpose: "Recipe generation and Jamie",
+  },
   vad: { name: "Silero VAD", purpose: "Speech detection" },
   whisper: { name: "Whisper Base", purpose: "Speech transcription" },
   kokoro: { name: "Kokoro 82M", purpose: "Jamie's voice" },
@@ -56,7 +60,7 @@ const emptyModel = (id: AppModelId): AppModelStatus => ({
 });
 
 let status: AppModelsStatus = {
-  models: (["gemma", "vad", "whisper", "kokoro"] as const).map(emptyModel),
+  models: (["llm", "vad", "whisper", "kokoro"] as const).map(emptyModel),
 };
 let inspectionPromise: Promise<void> | null = null;
 let preparationPromise: Promise<void> | null = null;
@@ -98,7 +102,7 @@ export function subscribeToAppModelsStatus(listener: () => void) {
 
 export function inspectAppModels() {
   inspectionPromise ??= Promise.all([
-    getDownloadInfo().then((info) => applyDownloadInfo("gemma", info)),
+    getDownloadInfo().then((info) => applyDownloadInfo("llm", info)),
     inspectKitchenAssistantModels().then((models) => {
       applyDownloadInfo("vad", models.vad);
       applyDownloadInfo("whisper", models.transcription);
@@ -129,22 +133,17 @@ export function prepareAppModels() {
     }
 
     const unsubscribe = subscribeToModelLoadStatus(() => {
-      const gemma = getModelLoadStatus();
-      updateModel("gemma", {
-        state:
-          gemma.state === "error"
-            ? "error"
-            : gemma.state === "ready"
-              ? "ready"
-              : gemma.state,
-        progress: gemma.progress,
-        error: gemma.error,
+      const { state, progress, error } = getModelLoadStatus();
+      updateModel("llm", {
+        state,
+        progress,
+        error,
       });
     });
 
     const preparations = [
       getTextGenerationPipeline().then(() =>
-        updateModel("gemma", { state: "ready", progress: 100, cached: true })
+        updateModel("llm", { state: "ready", progress: 100, cached: true })
       ),
       initializeKitchenVadRecorder((progress) => {
         updateModel("vad", {

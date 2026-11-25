@@ -1,5 +1,6 @@
 import {
   ModelRegistry,
+  env,
   pipeline,
   type TextGenerationPipeline,
 } from "@huggingface/transformers";
@@ -7,8 +8,29 @@ import {
 let generatorPromise: Promise<TextGenerationPipeline> | null = null;
 let downloadInfoPromise: Promise<DownloadInfo> | null = null;
 let lastDownloadProgress = -1;
-export const LLM_MODEL_ID = "onnx-community/gemma-4-E2B-it-ONNX";
+export const LLM_MODEL_ID = "onnx-community/LFM3-1.7B-ONNX";
 export const LLM_MODEL_DTYPE = "q4f16";
+
+export function ensureToolResponseTemplate(
+  tokenizer: TextGenerationPipeline["tokenizer"]
+): void {
+  if (
+    typeof tokenizer.get_response_parser !== "function" ||
+    typeof tokenizer.parse_response !== "function"
+  ) {
+    const reload = import.meta.env.DEV
+      ? " Restart the dev server with `pnpm dev --force`, then reload this page."
+      : " Reload the app to get the latest build.";
+    throw new Error(
+      `The loaded Transformers.js runtime (${env.version}) does not support response templates.${reload}`
+    );
+  }
+  if (!tokenizer.response_template) {
+    throw new Error(
+      `The loaded tokenizer for ${LLM_MODEL_ID} has no response template for tool calling.`
+    );
+  }
+}
 
 export interface DownloadInfo {
   cachedFiles: number;

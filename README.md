@@ -4,10 +4,12 @@ Jamie is an offline-first recipe builder and voice cooking agent. All AI inferen
 
 ## AI Architecture
 
-Jamie uses one local Gemma 4 model for two different workflows:
+Jamie uses one local text-generation model (Gemma 4 by default) for two workflows:
 
-- **Recipe generation:** Gemma produces a constrained JSON response matching the recipe schema. The UI streams and incrementally parses this output so the recipe appears while it is being generated.
-- **Cooking agent:** Gemma uses its native chat template to produce conversational text and tool calls. Available tools can change the serving count, reveal a recipe step, or end the active conversation and return to wake-word mode.
+- **Recipe generation:** The model produces a constrained JSON response matching the recipe schema. The UI streams and incrementally parses this output so the recipe appears while it is being generated.
+- **Cooking agent:** Transformers.js renders the conversation and tool definitions with the model's chat template, then parses the assistant's text and tool calls with the tokenizer's response template. Available tools can change the serving count, reveal a recipe step, or end the active conversation and return to wake-word mode.
+
+To switch models, set `LLM_MODEL_ID` (and `LLM_MODEL_DTYPE` if needed) in `src/services/shared.ts`. Use a WebGPU-compatible model with a chat template that supports tool calls and tool results, and a tokenizer response template that emits `tool_calls`.
 
 The voice pipeline combines three additional local models:
 
@@ -35,5 +37,3 @@ Create a production build with:
 ```bash
 pnpm build
 ```
-
-The project currently links local Transformers.js and WebGPU model packages from sibling repositories, as declared in `package.json`.

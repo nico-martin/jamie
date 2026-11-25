@@ -1,3 +1,7 @@
+overrides:
+  # Share the same ONNX initialization queue as the app's text pipeline.
+  "vad-recorder>@huggingface/transformers": "$@huggingface/transformers"
+
 allowBuilds:
   onnxruntime-node: false
   protobufjs: false

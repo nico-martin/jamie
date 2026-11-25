@@ -4,6 +4,7 @@ import {
   TextStreamer,
   pipeline,
   type AutomaticSpeechRecognitionPipeline,
+  type Message,
   type TextGenerationPipeline,
 } from "@huggingface/transformers";
 import { KokoroTTS } from "kokoro-js";
@@ -11,7 +12,10 @@ import {
   VadRecorder,
   type ProgressEvent as VadProgressEvent,
 } from "vad-recorder";
-import { getTextGenerationPipeline } from "./shared";
+import {
+  ensureToolResponseTemplate,
+  getTextGenerationPipeline,
+} from "./shared";
 
 const WHISPER_MODEL_ID = "onnx-community/whisper-base";
 const KOKORO_MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
@@ -161,26 +165,9 @@ export interface KitchenAssistantReply {
 export interface KitchenToolExecution {
   id: string;
   name: string;
-  arguments: Record<string, number>;
+  arguments: Record<string, unknown>;
   status: "running" | "completed";
   result?: Record<string, unknown>;
-}
-
-interface KitchenToolCall {
-  id: string;
-  type: "function";
-  function: {
-    name: string;
-    arguments: Record<string, number>;
-  };
-}
-
-interface KitchenChatMessage {
-  role: string;
-  content: string;
-  tool_calls?: KitchenToolCall[];
-  tool_call_id?: string;
-  name?: string;
 }
 
 class TokenTimingStreamer extends TextStreamer {
@@ -257,48 +244,9 @@ const kitchenTools = [
   },
 ];
 
-function parseKitchenToolCalls(response: string) {
-  const calls: KitchenToolCall[] = [];
-  const toolCallPattern =
-    /(?:<\|tool_call>)?\s*(?:call:)?(adjust_servings|show_recipe_step|end_conversation)\{([^{}]*)\}(?:<tool_call\|>)?/g;
-  let message = response
-    .replace(toolCallPattern, (_, name: string, rawArguments: string) => {
-      const argumentsRecord: Record<string, number> = {};
-      for (const key of ["servings", "step"]) {
-        const match = rawArguments.match(
-          new RegExp(`["']?${key}["']?\\s*:\\s*(\\d+)`)
-        );
-        if (match) argumentsRecord[key] = Number(match[1]);
-      }
-      calls.push({
-        id: `jamie_tool_${++kitchenToolCallSequence}`,
-        type: "function",
-        function: { name, arguments: argumentsRecord },
-      });
-      return "";
-    })
-    .replace(/<\|(?:turn|channel)[^>]*>|<(?:turn|channel)\|>/g, "")
-    .replace(/<\|tool_call>|<tool_call\|>/g, "")
-    .trim();
-
-  if (
-    calls.length === 0 &&
-    /^(?:call:)?end_conversation(?:\(\)|\{\})?$/.test(message)
-  ) {
-    calls.push({
-      id: `jamie_tool_${++kitchenToolCallSequence}`,
-      type: "function",
-      function: { name: "end_conversation", arguments: {} },
-    });
-    message = "";
-  }
-
-  return { calls, message };
-}
-
 async function generateKitchenChatTurn(
   generator: TextGenerationPipeline,
-  messages: KitchenChatMessage[],
+  messages: Message[],
   pastKeyValues: InstanceType<typeof DynamicCache>
 ) {
   let generatedTokens = 0;
@@ -315,10 +263,14 @@ async function generateKitchenChatTurn(
     }),
   });
   const finishedAt = performance.now();
-  const generatedChat = output[0]?.generated_text;
-  const content = generatedChat?.[generatedChat.length - 1]?.content;
+  const assistantMessage = output[0]?.generated_text[messages.length];
+  if (!assistantMessage) {
+    throw new Error(
+      "The text generation pipeline returned no assistant message."
+    );
+  }
   return {
-    response: typeof content === "string" ? content.trim() : "",
+    assistantMessage,
     generatedTokens,
     durationMs: finishedAt - startedAt,
     timeToFirstTokenMs:
@@ -425,8 +377,9 @@ export async function generateCookingAgentReply(
   onToolExecution?: (execution: KitchenToolExecution) => void
 ): Promise<KitchenAssistantReply> {
   const generator = await getTextGenerationPipeline();
+  ensureToolResponseTemplate(generator.tokenizer);
   const systemPrompt =
-    "You are Jamie, a concise and practical cooking companion. First decide whether the latest user message requires one of the available tools. When a tool applies, use the chat template's native tool-call mechanism; never print or mention the tool name as natural-language text. Your entire first response must be the tool call with no natural-language text. Wait for the tool result before confirming the action. Never claim, promise, or describe an action instead of calling its tool. Call adjust_servings for every request to change the serving count. Call show_recipe_step for every request concerning a particular recipe step. Call end_conversation whenever you judge that the user needs nothing else or is ending the exchange, including phrases such as 'for now', 'no thanks', 'that is all', closing thanks, or goodbye. Do not ask another question when ending the conversation. When no tool applies, answer questions about the recipe, substitutions, preparation, timing, and cooking technique in no more than three short sentences. Responses will be spoken aloud, so use natural conversational English without markdown or lists. After every non-terminal response, ask if you can help with anything else. The currently displayed serving count is " +
+    "You are Jamie, a concise and practical cooking companion. First decide whether the latest user message requires one of the available tools. When a tool applies, call it directly; never print or mention the tool name as natural-language text. Your entire first response must be the tool call with no natural-language text. Wait for the tool result before confirming the action. Never claim, promise, or describe an action instead of calling its tool. Call adjust_servings for every request to change the serving count. Call show_recipe_step for every request concerning a particular recipe step. Call end_conversation whenever you judge that the user needs nothing else or is ending the exchange, including phrases such as 'for now', 'no thanks', 'that is all', closing thanks, or goodbye. Do not ask another question when ending the conversation. When no tool applies, answer questions about the recipe, substitutions, preparation, timing, and cooking technique in no more than three short sentences. Responses will be spoken aloud, so use natural conversational English without markdown or lists. After every non-terminal response, ask if you can help with anything else. The currently displayed serving count is " +
     currentServings +
     ". The current recipe JSON is: " +
     recipeContext;
@@ -440,7 +393,7 @@ export async function generateCookingAgentReply(
     kitchenAssistantCacheSystemPrompt = systemPrompt;
   }
   const pastKeyValues = kitchenAssistantCache;
-  const messages: KitchenChatMessage[] = [
+  const messages: Message[] = [
     {
       role: "system",
       content: systemPrompt,
@@ -464,7 +417,7 @@ export async function generateCookingAgentReply(
       logJamieTiming(timingTrace, "agent_loop_started", { round: round + 1 });
     }
     const {
-      response,
+      assistantMessage,
       generatedTokens,
       durationMs,
       timeToFirstTokenMs,
@@ -477,76 +430,102 @@ export async function generateCookingAgentReply(
     totalTimeToFirstTokenMs += timeToFirstTokenMs;
     totalDecodeDurationMs += decodeDurationMs;
     totalDecodedTokens += decodedTokens;
+    const tps = Number(
+      (decodeDurationMs > 0
+        ? decodedTokens / (decodeDurationMs / 1000)
+        : 0
+      ).toFixed(1)
+    );
+    console.log("jamie_text_generation_timing", {
+      round: round + 1,
+      tps,
+      tokenCount: generatedTokens,
+      prefillTimeMs: Number(timeToFirstTokenMs.toFixed(1)),
+      generationTimeMs: Number(durationMs.toFixed(1)),
+    });
     if (timingTrace) {
       logJamieTiming(timingTrace, "agent_loop_generated", {
         round: round + 1,
         durationMs: Number(durationMs.toFixed(1)),
         generatedTokens,
         timeToFirstTokenMs: Number(timeToFirstTokenMs.toFixed(1)),
-        tps: Number(
-          (decodeDurationMs > 0
-            ? decodedTokens / (decodeDurationMs / 1000)
-            : 0
-          ).toFixed(1)
-        ),
+        tps,
       });
     }
-    const parsed = parseKitchenToolCalls(response);
-    const calls = parsed.calls;
-    const message = parsed.message;
+    // Some response templates omit call IDs. Give those calls an ID so the
+    // matching tool result can be included in the next chat turn.
+    const calls = (assistantMessage.tool_calls ?? []).map((call) => ({
+      ...call,
+      id:
+        typeof call.id === "string" && call.id
+          ? call.id
+          : `jamie_tool_${++kitchenToolCallSequence}`,
+    }));
     toolCallCount += calls.length;
-    const generatedMessage: KitchenChatMessage = {
-      role: "assistant",
-      content: message,
-      ...(calls.length > 0 ? { tool_calls: calls } : {}),
-    };
+    const generatedMessage =
+      calls.length > 0
+        ? { ...assistantMessage, tool_calls: calls }
+        : assistantMessage;
     console.log("kitchen_assistant_messages", [...messages, generatedMessage]);
     if (calls.length === 0) {
-      reply.message = message;
+      const { content } = assistantMessage;
+      reply.message = typeof content === "string" ? content.trim() : "";
       break;
     }
 
     messages.push(generatedMessage);
     for (const call of calls) {
+      const { name, arguments: args } = call.function;
+      const toolArguments: Record<string, unknown> = args ?? {};
       onToolExecution?.({
         id: call.id,
-        name: call.function.name,
-        arguments: call.function.arguments,
+        name,
+        arguments: toolArguments,
         status: "running",
       });
       if (timingTrace) {
         logJamieTiming(timingTrace, "tool_called", {
           round: round + 1,
-          tool: call.function.name,
-          arguments: call.function.arguments,
+          tool: name,
+          arguments: toolArguments,
         });
       }
       let result: Record<string, unknown> = {
         success: false,
-        error: `Unknown tool: ${call.function.name}`,
+        error: `Unknown tool: ${name}`,
       };
-      if (call.function.name === "adjust_servings") {
+      if (name === "adjust_servings") {
         result = { success: false, error: "Invalid serving count" };
-        const servings = call.function.arguments.servings;
-        if (servings >= 1 && servings <= 12) {
+        const servings = toolArguments.servings;
+        if (
+          typeof servings === "number" &&
+          Number.isInteger(servings) &&
+          servings >= 1 &&
+          servings <= 12
+        ) {
           reply.servings = servings;
           result = { success: true, servings };
         }
-      } else if (call.function.name === "show_recipe_step") {
+      } else if (name === "show_recipe_step") {
         result = { success: false, error: "Invalid recipe step" };
-        const step = call.function.arguments.step;
-        if (step >= 1 && step <= 50) {
+        const step = toolArguments.step;
+        if (
+          typeof step === "number" &&
+          Number.isInteger(step) &&
+          step >= 1 &&
+          step <= 50
+        ) {
           reply.step = step;
           result = { success: true, step };
         }
-      } else if (call.function.name === "end_conversation") {
+      } else if (name === "end_conversation") {
         reply.endConversation = true;
         result = { success: true };
       }
       onToolExecution?.({
         id: call.id,
-        name: call.function.name,
-        arguments: call.function.arguments,
+        name,
+        arguments: toolArguments,
         status: "completed",
         result,
       });
@@ -554,7 +533,7 @@ export async function generateCookingAgentReply(
         role: "tool",
         content: JSON.stringify(result),
         tool_call_id: call.id,
-        name: call.function.name,
+        name,
       });
     }
   }
